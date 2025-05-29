@@ -29,10 +29,10 @@ this distributed hashmap is eventually is translated into languages of choice
 
 Product name:
 
-HeyLingua
-FluentGDN
-Polyglot
-HeyPolyglot
-FlowGlot
-HeyAiGlot
-AiGlot
+- HeyLingua
+- FluentGDN
+- Polyglot
+- HeyPolyglot
+- FlowGlot
+- HeyAiGlot
+- AiGlot
