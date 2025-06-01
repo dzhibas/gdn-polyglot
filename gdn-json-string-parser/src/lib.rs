@@ -1,21 +1,4 @@
-/// need to tokenize json with start & end for just strings
-/// ignoring everything else, and then if needed rewrite it
-
-/// {
-///  "translate": "demo,or,obj.demo",
-///  "demo": "string to translate",
-///  "or": ["string 1", "String 2"],
-///  "if": ["string3"],
-///  "obj": {
-///      "demo": "one more"
-///  }
-/// }
-
 mod parser;
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
 
 #[cfg(test)]
 mod tests {
@@ -23,8 +6,13 @@ mod tests {
 
     #[test]
     fn test_simple_naive() {
-        let source = r#"{"something": "something" }"#;
-        dbg!(source);
-        //assert_eq!(result, 4);
+        let source = r#"{"some": 23, "other": null, "something": "something", "double": 213.2, "other": [2343, true, false, "testing", {"other":null, "root": "tree"}], "sub": { "demo": "demo 2" } }"#;
+        let (_, pr) = parser::json(source).unwrap();
+    }
+
+    #[test]
+    fn test_bigger_json() {
+        let source = include_str!("../tests/example1.json");
+        let (_, pr) = parser::json(source).unwrap();
     }
 }
