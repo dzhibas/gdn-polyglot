@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn test_simple_naive() {
-        let source = r"{'something': 'something' }";
+        let source = r#"{"something": "something" }"#;
         dbg!(source);
         //assert_eq!(result, 4);
     }
