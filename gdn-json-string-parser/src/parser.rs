@@ -5,30 +5,43 @@ use nom::{
     character::complete::{anychar, char, multispace0, none_of, one_of},
     combinator::{map, map_opt, map_res, opt, recognize, verify},
     error::ParseError,
-    multi::{fold, many0, many1, separated_list0},
+    multi::{many0, many1, separated_list0},
     sequence::{delimited, preceded, separated_pair, terminated},
 };
+use nom_locate::LocatedSpan;
 use std::collections::HashMap;
 
+type Span<'a> = LocatedSpan<&'a str, ()>;
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum JsonValue {
-    Rest(String),
-    Str(String),
-    Array(Vec<JsonValue>),
-    Object(HashMap<String, JsonValue>),
+pub struct JsonString<'a> {
+    pub value: String,
+    pub pos: Span<'a>,
+    pub col: usize,
 }
 
-fn ws<'a, O, E: ParseError<&'a str>, F: Parser<&'a str, Output = O, Error = E>>(
+#[derive(Debug, PartialEq, Clone)]
+pub enum JsonValue<'a> {
+    Rest(String),
+    Str(JsonString<'a>),
+    Array(Vec<JsonValue<'a>>),
+    Object(HashMap<String, JsonValue<'a>>),
+}
+
+fn ws<'a, O, E: ParseError<Span<'a>>, F: Parser<Span<'a>, Output = O, Error = E>>(
     f: F,
-) -> impl Parser<&'a str, Output = O, Error = E> {
+) -> impl Parser<Span<'a>, Output = O, Error = E> {
     delimited(multispace0, f, multispace0)
 }
 
-fn u16_hex(input: &str) -> IResult<&str, u16> {
-    map_res(take(4usize), |s| u16::from_str_radix(s, 16)).parse(input)
+fn u16_hex(input: Span) -> IResult<Span, u16> {
+    map_res(take(4usize), |s: Span| {
+        u16::from_str_radix(s.fragment(), 16)
+    })
+    .parse(input)
 }
 
-fn unicode_escape(input: &str) -> IResult<&str, char> {
+fn unicode_escape(input: Span) -> IResult<Span, char> {
     map_opt(
         alt((
             // Not a surrogate
@@ -53,7 +66,7 @@ fn unicode_escape(input: &str) -> IResult<&str, char> {
     .parse(input)
 }
 
-fn character(input: &str) -> IResult<&str, char> {
+fn character(input: Span) -> IResult<Span, char> {
     let (input, c) = none_of("\"")(input)?;
     if c == '\\' {
         alt((
@@ -75,20 +88,15 @@ fn character(input: &str) -> IResult<&str, char> {
         Ok((input, c))
     }
 }
-
-fn string(input: &str) -> IResult<&str, String> {
-    delimited(
-        char('"'),
-        fold(0.., character, String::new, |mut string, c| {
-            string.push(c);
-            string
-        }),
-        char('"'),
-    )
-    .parse(input)
+fn string_inside(i: Span) -> IResult<Span, Span> {
+    recognize(many0(character)).parse(i)
 }
 
-fn array(input: &str) -> IResult<&str, Vec<JsonValue>> {
+fn string(input: Span) -> IResult<Span, Span> {
+    delimited(char('"'), string_inside, char('"')).parse(input)
+}
+
+fn array(input: Span) -> IResult<Span, Vec<JsonValue>> {
     delimited(
         char('['),
         ws(separated_list0(ws(char(',')), json_value)),
@@ -97,7 +105,7 @@ fn array(input: &str) -> IResult<&str, Vec<JsonValue>> {
     .parse(input)
 }
 
-fn object(input: &str) -> IResult<&str, HashMap<String, JsonValue>> {
+fn object(input: Span) -> IResult<Span, HashMap<String, JsonValue>> {
     map(
         delimited(
             char('{'),
@@ -107,12 +115,17 @@ fn object(input: &str) -> IResult<&str, HashMap<String, JsonValue>> {
             )),
             char('}'),
         ),
-        |key_values| key_values.into_iter().collect(),
+        |key_values| {
+            key_values
+                .into_iter()
+                .map(|x| (x.0.fragment().to_string(), x.1))
+                .collect()
+        },
     )
     .parse(input)
 }
 
-fn float(input: &str) -> IResult<&str, &str> {
+fn float(input: Span) -> IResult<Span, Span> {
     alt((
         // Case one: .42
         recognize((
@@ -132,11 +145,11 @@ fn float(input: &str) -> IResult<&str, &str> {
     .parse(input)
 }
 
-fn decimal(input: &str) -> IResult<&str, &str> {
+fn decimal(input: Span) -> IResult<Span, Span> {
     recognize(many1(terminated(one_of("0123456789"), many0(char('_'))))).parse(input)
 }
 
-fn parse_rest(i: &str) -> IResult<&str, String> {
+fn parse_rest(i: Span) -> IResult<Span, String> {
     map(
         alt((tag("true"), tag("false"), tag("null"), float, decimal)),
         |s| s.to_string(),
@@ -144,9 +157,15 @@ fn parse_rest(i: &str) -> IResult<&str, String> {
     .parse(i)
 }
 
-fn json_value(input: &str) -> IResult<&str, JsonValue> {
+fn json_value(input: Span) -> IResult<Span, JsonValue> {
     alt((
-        map(string, JsonValue::Str),
+        map(string, |e| {
+            JsonValue::Str(JsonString {
+                value: e.fragment().to_string(),
+                pos: e,
+                col: e.get_column(),
+            })
+        }),
         map(parse_rest, JsonValue::Rest),
         map(array, JsonValue::Array),
         map(object, JsonValue::Object),
@@ -154,6 +173,38 @@ fn json_value(input: &str) -> IResult<&str, JsonValue> {
     .parse(input)
 }
 
-pub fn json(input: &str) -> IResult<&str, JsonValue> {
-    ws(json_value).parse(input)
+pub fn json(i: &str) -> IResult<Span, JsonValue> {
+    let span = Span::new(i);
+    ws(json_value).parse(span)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_parse_one_line() {
+        let input = r#"{"some": 23, "other": null, "something": "something", "double": 213.2, "other": [2343, true, false, "testing", {"other":null, "root": "tree"}], "sub": { "demo": "demo 2" } }"#;
+        let (remaining, value) = json(input).unwrap();
+    }
+
+    #[test]
+    fn test_json_parse() {
+        let input = r#"{
+        "some": 23, 
+        "other": null,
+         "something":
+          "something", 
+          "double": 213.2, 
+          "other": [2343, true, false, "testing", {"other":null, "root": "tree"}], 
+          "sub": { "demo": "demo 2" } 
+        }"#;
+        let (remaining, value) = json(input).unwrap();
+    }
+
+    #[test]
+    fn test_bigger_json() {
+        let source = include_str!("../tests/example1.json");
+        let (_, pr) = json(source).unwrap();
+    }
 }
