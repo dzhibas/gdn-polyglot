@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn test_json_parse_one_line() {
         let input = r#"{"some": 23, "other": null, "something": "something", "double": 213.2, "other": [2343, true, false, "testing", {"other":null, "root": "tree"}], "sub": { "demo": "demo 2" } }"#;
-        let (remaining, value) = json(input).unwrap();
+        let (_remaining, _value) = json(input).unwrap();
     }
 
     #[test]
@@ -199,12 +199,12 @@ mod tests {
           "other": [2343, true, false, "testing", {"other":null, "root": "tree"}], 
           "sub": { "demo": "demo 2" } 
         }"#;
-        let (remaining, value) = json(input).unwrap();
+        let (_remaining, _value) = json(input).unwrap();
     }
 
     #[test]
     fn test_bigger_json() {
         let source = include_str!("../tests/example1.json");
-        let (_, pr) = json(source).unwrap();
+        let (_, _pr) = json(source).unwrap();
     }
 }

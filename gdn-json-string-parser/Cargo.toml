@@ -1,6 +1,7 @@
 [package]
 name = "gdn-json-string-parser"
-version = "0.1.3"
+version = "0.1.4"
+authors = ["dzhibas <nikolajus@gmail.com>"]
 edition = "2024"
 
 [dependencies]
